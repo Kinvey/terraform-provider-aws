@@ -48,9 +48,9 @@ func TestAccAWSDlmLifecyclePolicy_Full(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-test")
 
 	resource.ParallelTest(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t); testAccPreCheckAWSDlm(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: dlmLifecyclePolicyDestroy,
+		PreCheck:          func() { testAccPreCheck(t); testAccPreCheckAWSDlm(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      dlmLifecyclePolicyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: dlmLifecyclePolicyFullConfig(rName),
@@ -68,6 +68,11 @@ func TestAccAWSDlmLifecyclePolicy_Full(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.tags_to_add.tf-acc-test-added", "full"),
 					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.copy_tags", "false"),
 					resource.TestCheckResourceAttr(resourceName, "policy_details.0.target_tags.tf-acc-test", "full"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.copy_tags", "false"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.encrypted", "false"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.retain_rule.0.interval", "15"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.retain_rule.0.interval_unit", "MONTHS"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.target_region", testAccGetAlternateRegion()),
 				),
 			},
 			{
@@ -86,6 +91,12 @@ func TestAccAWSDlmLifecyclePolicy_Full(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.tags_to_add.tf-acc-test-added", "full-updated"),
 					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.copy_tags", "true"),
 					resource.TestCheckResourceAttr(resourceName, "policy_details.0.target_tags.tf-acc-test", "full-updated"),
+					resource.TestCheckResourceAttrSet(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.cmk_arn"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.copy_tags", "true"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.encrypted", "true"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.retain_rule.0.interval", "30"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.retain_rule.0.interval_unit", "DAYS"),
+					resource.TestCheckResourceAttr(resourceName, "policy_details.0.schedule.0.cross_region_copy_rule.0.target_region", testAccGetAlternateRegion()),
 				),
 			},
 			{
@@ -287,7 +298,7 @@ resource "aws_dlm_lifecycle_policy" "basic" {
 }
 
 func dlmLifecyclePolicyFullConfig(rName string) string {
-	return fmt.Sprintf(`
+	return testAccAlternateAccountAlternateRegionProviderConfig() + fmt.Sprintf(`
 resource "aws_iam_role" "dlm_lifecycle_role" {
   name = %q
 
@@ -306,6 +317,30 @@ resource "aws_iam_role" "dlm_lifecycle_role" {
   ]
 }
 EOF
+}
+
+
+resource "aws_kms_key" "alternate" {
+	provider                = "aws.alternate"
+  description             = "Terraform %[1]s"
+
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Id": "alternate",
+  "Statement": [
+    {
+      "Sid": "Enable IAM User Permissions",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": "kms:*",
+      "Resource": "*"
+    }
+  ]
+}
+POLICY
 }
 
 resource "aws_dlm_lifecycle_policy" "full" {
@@ -334,6 +369,17 @@ resource "aws_dlm_lifecycle_policy" "full" {
       }
 
       copy_tags = false
+
+      cross_region_copy_rule {
+        target_region = %[2]q
+        encrypted = false
+        copy_tags = false
+        retain_rule {
+          interval = 15
+          interval_unit = "MONTHS"
+        }
+      }
+
     }
 
     target_tags = {
@@ -341,7 +387,7 @@ resource "aws_dlm_lifecycle_policy" "full" {
     }
   }
 }
-`, rName)
+`, rName, testAccGetAlternateRegion())
 }
 
 func dlmLifecyclePolicyFullConfigWithCron(rName string) string {
@@ -401,7 +447,7 @@ resource "aws_dlm_lifecycle_policy" "full" {
 }
 
 func dlmLifecyclePolicyFullUpdateConfig(rName string) string {
-	return fmt.Sprintf(`
+	return testAccAlternateAccountAlternateRegionProviderConfig() + fmt.Sprintf(`
 resource "aws_iam_role" "dlm_lifecycle_role" {
   name = %q
 
@@ -420,6 +466,29 @@ resource "aws_iam_role" "dlm_lifecycle_role" {
   ]
 }
 EOF
+}
+
+resource "aws_kms_key" "alternate" {
+	provider                = "aws.alternate"
+  description             = "Terraform %[1]s"
+
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Id": "alternate",
+  "Statement": [
+    {
+      "Sid": "Enable IAM User Permissions",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": "kms:*",
+      "Resource": "*"
+    }
+  ]
+}
+POLICY
 }
 
 resource "aws_dlm_lifecycle_policy" "full" {
@@ -447,6 +516,17 @@ resource "aws_dlm_lifecycle_policy" "full" {
         tf-acc-test-added = "full-updated"
       }
 
+      cross_region_copy_rule {
+        target_region = %[2]q
+        encrypted = true
+        cmk_arn = "${aws_kms_key.alternate.arn}"
+        copy_tags = true
+        retain_rule {
+          interval = 30
+          interval_unit = "DAYS"
+        }
+      }
+
       copy_tags = true
     }
 
@@ -455,7 +535,7 @@ resource "aws_dlm_lifecycle_policy" "full" {
     }
   }
 }
-`, rName)
+`, rName, testAccGetAlternateRegion())
 }
 
 func dlmLifecyclePolicyFullUpdateConfigWithCron(rName string) string {
